@@ -1,0 +1,11 @@
+torch
+torchvision
+opencv-python
+numpy
+tqdm
+matplotlib
+jupyter
+notebook
+jupyterlab
+dlib
+imutils

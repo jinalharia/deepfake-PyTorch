@@ -1,0 +1,19 @@
+name: deepfake.PyTorch
+dependencies:
+  - python=3.6
+  - pytorch
+  - torchvision
+  - cudatoolkit=10.1
+  - opencv-python
+  - numpy
+  - tqdm
+  - matplotlib
+  - jupyter
+  - notebook
+  - jupyterlab
+  - dlib
+  - imutils
+  - scikit-learn
+  - pillow
+  - pyqt
+  - pip
