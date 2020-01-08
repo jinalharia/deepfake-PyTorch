@@ -14,6 +14,7 @@ import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
 import torch.backends.cudnn as cudnn
+from torch.utils.tensorboard import SummaryWriter
 
 from models import Autoencoder, toTensor, var_to_np
 from util import get_image_paths, load_images, stack_images
@@ -40,10 +41,18 @@ if args.cuda is True:
     cudnn.benchmark = True
 else:
     print('===> Using CPU to train')
+    device = torch.device('cpu')
 
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
+
+batch_size = args.batch_size
+epochs = args.epochs
+lr = 5e-5
+betas = (0.5, 0.999)
+
+NAME = f'batch_size-{batch_size}-lr-{lr}-betas-[{betas[0]},{betas[1]}]'
 
 print('===> Loaing datasets')
 images_A = get_image_paths("train/obama_face")
@@ -57,12 +66,14 @@ model = Autoencoder().to(device)
 print('===> Try resume from checkpoint')
 if os.path.isdir('checkpoint'):
     try:
-        checkpoint = torch.load('./checkpoint/autoencoder.t7')
+        checkpoint = torch.load('./checkpoint/' + NAME + '_autoencoder.t7')
         model.load_state_dict(checkpoint['state'])
         start_epoch = checkpoint['epoch']
         print('===> Load last checkpoint data')
     except FileNotFoundError:
-        print('Can\'t found autoencoder.t7')
+        print('Can\'t find ' + NAME + '_autoencoder.t7')
+        start_epoch = 0
+        print('===> Start from scratch')
 else:
     start_epoch = 0
     print('===> Start from scratch')
@@ -80,12 +91,17 @@ optimizer_2 = optim.Adam([{'params': model.encoder.parameters()},
 # s = sum([np.prod(list(p.size())) for p in model.parameters()])
 # print('Number of params: %d' % s)
 
+# comment=f' batch_size={batch_size} lr={lr}'
+# tb = SummaryWriter(comment=comment)
+
 if __name__ == "__main__":
+
+    tb = SummaryWriter(log_dir=f'runs/{NAME}')
 
     print('Start training, press \'q\' to stop')
 
     for epoch in range(start_epoch, args.epochs):
-        batch_size = args.batch_size
+        # batch_size = args.batch_size
 
         warped_A, target_A = get_training_data(images_A, batch_size)
         warped_B, target_B = get_training_data(images_B, batch_size)
@@ -95,11 +111,11 @@ if __name__ == "__main__":
         warped_A, target_A = toTensor(warped_A), toTensor(target_A)
         warped_B, target_B = toTensor(warped_B), toTensor(target_B)
 
-        if args.cuda:
-            warped_A = warped_A.to(device).float()
-            target_A = target_A.to(device).float()
-            warped_B = warped_B.to(device).float()
-            target_B = target_B.to(device).float()
+        # if args.cuda:
+        warped_A = warped_A.to(device).float()
+        target_A = target_A.to(device).float()
+        warped_B = warped_B.to(device).float()
+        target_B = target_B.to(device).float()
 
         optimizer_1.zero_grad()
         optimizer_2.zero_grad()
@@ -118,7 +134,15 @@ if __name__ == "__main__":
         loss2.backward()
         optimizer_1.step()
         optimizer_2.step()
+
+        tb.add_scalar('LossA', loss1.item(), epoch)
+        tb.add_scalar('LossB', loss2.item(), epoch)
+
         print('epoch: {}, lossA:{}, lossB:{}'.format(epoch, loss1.item(), loss2.item()))
+
+        for name, weight in model.named_parameters():
+            tb.add_histogram(name, weight, epoch)
+            tb.add_histogram(f'{name}.grad', weight.grad, epoch)
 
         if epoch % args.log_interval == 0:
 
@@ -134,34 +158,36 @@ if __name__ == "__main__":
             }
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
-            torch.save(state, './checkpoint/autoencoder.t7')
+            torch.save(state, './checkpoint/' + NAME + '_autoencoder.t7')
 
-        figure_A = np.stack([
-            test_A,
-            var_to_np(model(test_A_, 'A')),
-            var_to_np(model(test_A_, 'B')),
-        ], axis=1)
-        #print("figure A shape is {}".format(figure_A.shape))
-        figure_B = np.stack([
-            test_B,
-            var_to_np(model(test_B_, 'B')),
-            var_to_np(model(test_B_, 'A')),
-        ], axis=1)
-        figure = np.concatenate([figure_A, figure_B], axis=0)
-        #print("figure shape is {}".format(figure.shape))
+        # figure_A = np.stack([
+        #     test_A,
+        #     var_to_np(model(test_A_, 'A')),
+        #     var_to_np(model(test_A_, 'B')),
+        # ], axis=1)
+        # #print("figure A shape is {}".format(figure_A.shape))
+        # figure_B = np.stack([
+        #     test_B,
+        #     var_to_np(model(test_B_, 'B')),
+        #     var_to_np(model(test_B_, 'A')),
+        # ], axis=1)
+        # figure = np.concatenate([figure_A, figure_B], axis=0)
+        # #print("figure shape is {}".format(figure.shape))
 
-        figure = figure.transpose((0, 1, 3, 4, 2))
-        #print("figure shape after transpose is {}".format(figure.shape))
+        # figure = figure.transpose((0, 1, 3, 4, 2))
+        # #print("figure shape after transpose is {}".format(figure.shape))
 
-        figure = figure.reshape((4, 7) + figure.shape[1:])
-        #print("figure shape after reshape is {}".format(figure.shape))
+        # figure = figure.reshape((4, 7) + figure.shape[1:])
+        # #print("figure shape after reshape is {}".format(figure.shape))
 
-        figure = stack_images(figure)
-        #print("figure shape after stack_images is {}".format(figure.shape))
-        #exit(0)
-        figure = np.clip(figure * 255, 0, 255).astype('uint8')
+        # figure = stack_images(figure)
+        # #print("figure shape after stack_images is {}".format(figure.shape))
+        # #exit(0)
+        # figure = np.clip(figure * 255, 0, 255).astype('uint8')
 
-        cv2.imshow("", figure)
+        # cv2.imshow("", figure)
         key = cv2.waitKey(1)
         if key == ord('q'):
             exit()
+
+    tb.close()
